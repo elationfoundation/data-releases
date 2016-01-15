@@ -1,0 +1,3 @@
+# I contend that the ical file is an output and not data/code
+# Therefore it should be in the "releases" and not stored in the repo
+releases.ical
