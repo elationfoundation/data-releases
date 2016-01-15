@@ -17,6 +17,7 @@ import argparse
 import csv
 from datetime import datetime
 from icalendar.cal import Calendar, Event
+from icalendar import vDatetime
 from collections import namedtuple
 from os import walk, path
 from tempfile import NamedTemporaryFile
@@ -31,7 +32,7 @@ log = logging.getLogger(__name__)
 
 def get_release_list(list_path):
     with open(list_path, 'r') as csvfile:
-        reader= csv.reader(csvfile)
+        reader= csv.reader(csvfile, delimiter=',', quotechar='"')
         csvlist = list(reader)
     return csvlist
 
@@ -66,6 +67,7 @@ def merge_folder(folder_path, merged_path):
         rel_list = get_release_list(release)
         if headers == None:
             headers = rel_list[0]
+            merged_releases += headers
         if rel_list[0] == headers:
             merged_releases += rel_list[1:]
         else:
@@ -85,6 +87,7 @@ def make_dataset(release):
             "contact_name", # 5
             "contact_email"] # 6
     """
+    #print(release)
     dataset = Dataset()
     try:
         dataset.title = release[0]
@@ -94,7 +97,7 @@ def make_dataset(release):
         dataset.description = release[2]
         dataset.publisher = {"name":release[3]}
         dataset.distribution = {"downloadURL": release[4]}
-        dataset.contactPoint.fn = {"fn":release[5], "hasEmail":release[6]}
+        dataset.contactPoint = {"fn":release[5], "hasEmail":release[6]}
     except ValueError as _e:
         raise ValueError(_e)
     return dataset
@@ -105,13 +108,14 @@ def build_event(release):
     try:
         # This is where we actually decide what we care about.
         dataset = make_dataset(release)
-        event['summary'] = str(dataset.title)
-        event['dtstart'] = str(dataset.temporal.start)
-        event['url'] = str(dataset.distribution.downloadURL)
-        event['organizer'] = str(dataset.publisher.name)
-        event['contact'] = "CN={0}:mailto:{1}".format(str(dataset.contactPoint.fn),
-                                                      str(dataset.contactPoint.hasEmail))
-        event['description'] = str(dataset.description)
+        event['summary'] = dataset.title
+        event['dtstart'] = dataset.temporal.start
+        event['url'] = dataset.distribution.downloadURL
+        event['organizer'] = dataset.publisher.name
+        #"CN={0}".format(dataset.publisher.name)
+        event['contact'] = "CN={0}:mailto:{1}".format(dataset.contactPoint.fn,
+                                                      dataset.contactPoint.hasEmail)
+        event['description'] = dataset.description
     except ValueError as _e:
             log.info("Cannot build event. Invalid fields present.")
             raise ValueError(_e)
@@ -119,8 +123,6 @@ def build_event(release):
 
 
 def write_ical(releases, ical_path):
-    raise NotImplementedError("Add all the event properties here")
-
     release_cal = Calendar()
     for release in releases:
         try:
@@ -131,7 +133,7 @@ def write_ical(releases, ical_path):
             log.warn("Release event {0} could not be added ".format(release[0]) +
                      "to the ical event.")
 
-    with open(ical_path, "w+") as ical_file:
+    with open(ical_path, "wb+") as ical_file:
         ical_file.write(release_cal.to_ical())
 
 
@@ -146,7 +148,7 @@ def main():
     else:
         release_path = args.list_path
 
-    releases = get_release_list(release_path)
+        releases = get_release_list(release_path)[1:]
     write_ical(releases, args.ical_path)
     if temp_file:
         temp_file.close()
@@ -217,11 +219,11 @@ class Dataset():
         return self._publisher
 
     @publisher.setter
-    def publisher(self, value):
+    def publisher(self, values):
         # https://project-open-data.cio.gov/v1.1/schema/#publisher
         # TODO Should stub out to another class
         # But I am not doing that
-        self._publisher = value
+        self._publisher = Publisher(values)
 
     @publisher.deleter
     def publisher(self):
@@ -358,10 +360,12 @@ class Dataset():
     @temporal.setter
     def temporal(self, values):
         # https://project-open-data.cio.gov/v1.1/schema/#temporal
-        date_pair = namedtuple("temporal" ["start", "end"])
+        date_pair = namedtuple("temporal", ["start", "end"])
         try:
-            date_pair.start = iso8601.parse_date(values[0])
-            date_pair.end = iso8601.parse_date(values[1])
+            #print(str(values[0]))
+            date_pair.start = vDatetime(iso8601.parse_date(values[0]))
+            #print(values[1])
+            date_pair.end = vDatetime(iso8601.parse_date(values[1]))
         except ParseError:
             raise ValueError("One of the date strings {0} or {1} is not parsable".format(values[0],
                                                                                          values[1]))
@@ -591,6 +595,9 @@ class Dataset():
 
 class Distribution():
 
+    def __init__(self, values):
+        self.downloadURL = values["downloadURL"]
+
     @property
     def accessURL(self):
         """I'm the 'accessURL' property."""
@@ -765,7 +772,8 @@ class Publisher():
         del self._name
 
 class Spatial():
-    raise NotImplementedError("Not implemented")
+    def __init__(self):
+        raise NotImplementedError("Not implemented")
 
 def is_uri(value):
     if urlparse(value).path != "":
@@ -799,8 +807,7 @@ def parse_arguments():
                         default="./releases.ical")
     parser.add_argument("--merge_folder", "-m",
                         help="Path to folder to merge."
-                        "If the parser should merge all CSV's in a folder into a single file",
-                        default="./releases")
+                        "If the parser should merge all CSV's in a folder into a single file")
     args = parser.parse_args()
     return args
 

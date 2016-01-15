@@ -49,7 +49,7 @@ apt_install(){
                                | grep -o "${package}")
     if [[ "${installed}" = ""  ]]; then
         echo "Installing ${package} via apt-get"
-        sudo apt-get -y install "${package}"
+        apt-get -y install "${package}"
         echo "Installation of ${package} completed."
     else
         echo "${package} already installed. Skipping...."
@@ -63,7 +63,7 @@ pip_three_install(){
                              | grep -o "${package}")
     if [[ "${installed}" = ""  ]]; then
         echo "Installing ${package} via python pip3"
-        sudo pip3 install --user vagrant "${package}"
+        sudo -u vagrant sudo pip3 install "${package}"
         echo "Installation of ${package} completed."
     else
         echo "${package} already installed. Skipping...."
